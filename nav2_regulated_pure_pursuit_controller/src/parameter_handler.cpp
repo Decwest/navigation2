@@ -118,17 +118,10 @@ ParameterHandler::ParameterHandler(
     node, plugin_name_ + ".use_collision_detection",
     rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
-      node, plugin_name_ + ".stateful", rclcpp::ParameterValue(true));
-  declare_parameter_if_not_declared(
-      node, plugin_name_ + ".use_dynamic_window", rclcpp::ParameterValue(true));
-  declare_parameter_if_not_declared(
-      node, plugin_name_ + ".velocity_feedback", rclcpp::ParameterValue(std::string("OPEN_LOOP")));
+    node, plugin_name_ + ".stateful", rclcpp::ParameterValue(true));
 
-  node->get_parameter(plugin_name_ + ".max_linear_vel", params_.max_linear_vel);
-  params_.base_max_linear_vel = params_.max_linear_vel;
-  node->get_parameter(plugin_name_ + ".min_linear_vel", params_.min_linear_vel);
-  node->get_parameter(plugin_name_ + ".max_angular_vel", params_.max_angular_vel);
-  node->get_parameter(plugin_name_ + ".min_angular_vel", params_.min_angular_vel);
+  node->get_parameter(plugin_name_ + ".desired_linear_vel", params_.desired_linear_vel);
+  params_.base_desired_linear_vel = params_.desired_linear_vel;
   node->get_parameter(plugin_name_ + ".lookahead_dist", params_.lookahead_dist);
   node->get_parameter(plugin_name_ + ".min_lookahead_dist", params_.min_lookahead_dist);
   node->get_parameter(plugin_name_ + ".max_lookahead_dist", params_.max_lookahead_dist);
@@ -270,14 +263,14 @@ rcl_interfaces::msg::SetParametersResult ParameterHandler::validateParameterUpda
         parameter.as_double() <= 0.0)
       {
         RCLCPP_WARN(
-        logger_, "The value inflation_cost_scaling_factor is incorrectly set, "
-        "it should be >0. Ignoring parameter update.");
+          logger_, "The value inflation_cost_scaling_factor is incorrectly set, "
+          "it should be >0. Ignoring parameter update.");
         result.successful = false;
       } else if (parameter.as_double() < 0.0) {
         RCLCPP_WARN(
-        logger_, "The value of parameter '%s' is incorrectly set to %f, "
-        "it should be >=0. Ignoring parameter update.",
-        param_name.c_str(), parameter.as_double());
+          logger_, "The value of parameter '%s' is incorrectly set to %f, "
+          "it should be >=0. Ignoring parameter update.",
+          param_name.c_str(), parameter.as_double());
         result.successful = false;
       }
     } else if (param_type == ParameterType::PARAMETER_BOOL) {
