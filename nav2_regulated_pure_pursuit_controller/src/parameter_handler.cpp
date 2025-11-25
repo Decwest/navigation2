@@ -117,10 +117,17 @@ ParameterHandler::ParameterHandler(
     node, plugin_name_ + ".use_collision_detection",
     rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".stateful", rclcpp::ParameterValue(true));
+      node, plugin_name_ + ".stateful", rclcpp::ParameterValue(true));
+  declare_parameter_if_not_declared(
+      node, plugin_name_ + ".use_dynamic_window", rclcpp::ParameterValue(false));
+  declare_parameter_if_not_declared(
+      node, plugin_name_ + ".velocity_feedback", rclcpp::ParameterValue(std::string("OPEN_LOOP")));
 
-  node->get_parameter(plugin_name_ + ".desired_linear_vel", params_.desired_linear_vel);
-  params_.base_desired_linear_vel = params_.desired_linear_vel;
+  node->get_parameter(plugin_name_ + ".max_linear_vel", params_.max_linear_vel);
+  params_.base_max_linear_vel = params_.max_linear_vel;
+  node->get_parameter(plugin_name_ + ".min_linear_vel", params_.min_linear_vel);
+  node->get_parameter(plugin_name_ + ".max_angular_vel", params_.max_angular_vel);
+  node->get_parameter(plugin_name_ + ".min_angular_vel", params_.min_angular_vel);
   node->get_parameter(plugin_name_ + ".lookahead_dist", params_.lookahead_dist);
   node->get_parameter(plugin_name_ + ".min_lookahead_dist", params_.min_lookahead_dist);
   node->get_parameter(plugin_name_ + ".max_lookahead_dist", params_.max_lookahead_dist);
