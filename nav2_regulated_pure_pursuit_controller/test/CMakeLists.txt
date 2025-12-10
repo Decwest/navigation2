@@ -1,6 +1,7 @@
 # tests for regulated PP
 ament_add_gtest(test_regulated_pp
   test_regulated_pp.cpp
+  test_dwpp_functions.cpp
   path_utils/path_utils.cpp
 )
 ament_target_dependencies(test_regulated_pp
