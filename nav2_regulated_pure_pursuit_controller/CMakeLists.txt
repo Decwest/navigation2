@@ -10,6 +10,7 @@ find_package(nav2_util REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -29,6 +30,7 @@ set(dependencies
   nav_msgs
   angles
   nav2_util
+  ament_index_cpp
   nav2_core
   tf2
   tf2_geometry_msgs
@@ -71,4 +73,3 @@ ament_export_dependencies(${dependencies})
 pluginlib_export_plugin_description_file(nav2_core nav2_regulated_pure_pursuit_controller.xml)
 
 ament_package()
-

@@ -291,17 +291,15 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
       // compute optimal path tracking velocity commands
 
       // considering velocity and acceleration constraints (DWPP)
-      const double regulated_linear_vel = linear_vel;
+      regulated_linear_vel = linear_vel;
 
       // using last command velocity as a current velocity
       const geometry_msgs::msg::Twist current_speed = last_command_velocity_;
 
       // compute Dynamic Window
-      dynamic_window_pure_pursuit::DynamicWindowBounds dynamic_window =
-        dynamic_window_pure_pursuit::computeDynamicWindow(
+      dynamic_window = dynamic_window_pure_pursuit::computeDynamicWindow(
         current_speed, max_linear_vel, min_linear_vel, max_angular_vel, min_angular_vel,
-        max_linear_accel, max_linear_decel, max_angular_accel, max_angular_decel,
-          control_duration_);
+        max_linear_accel, max_linear_decel, max_angular_accel, max_angular_decel, control_duration_);
 
       // apply regulation to Dynamic Window
       dynamic_window_pure_pursuit::applyRegulationToDynamicWindow(
@@ -345,6 +343,19 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
     control_duration_);
 
   constraints_violation_flag_publisher_->publish(constraints_violation_flag_msg);
+
+  // record dynamic window
+  dynamic_window_pure_pursuit::recordDynamicWindowData(
+    regulation_curvature,
+    last_command_velocity_,
+    cmd_vel.twist,
+    regulated_linear_vel,
+    dynamic_window,
+    max_linear_vel, min_linear_vel,
+    max_angular_vel, min_angular_vel,
+    max_linear_accel, max_linear_decel,
+    max_angular_accel, max_angular_decel,
+    control_duration_);
 
   last_command_velocity_ = cmd_vel.twist;
 

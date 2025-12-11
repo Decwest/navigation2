@@ -223,6 +223,8 @@ protected:
   bool is_rotating_to_heading_ = false;
   bool has_reached_xy_tolerance_ = false;
   geometry_msgs::msg::Twist last_command_velocity_;
+  double regulated_linear_vel;
+  dynamic_window_pure_pursuit::DynamicWindowBounds dynamic_window;
 
   // bool publisher
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr constraints_violation_flag_publisher_;

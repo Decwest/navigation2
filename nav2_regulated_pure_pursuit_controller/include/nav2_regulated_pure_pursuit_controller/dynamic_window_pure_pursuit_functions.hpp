@@ -21,9 +21,13 @@
 #include <tuple>
 #include <utility>
 #include <limits>
+#include <fstream>
+#include <iomanip>
+#include <filesystem>
 
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "ament_index_cpp/get_package_share_directory.hpp"
 
 namespace nav2_regulated_pure_pursuit_controller
 {
@@ -343,6 +347,137 @@ inline std::tuple<double, double> computeOptimalVelocityWithinDynamicWindow(
 
   return std::make_tuple(optimal_linear_vel, optimal_angular_vel);
 }
+
+inline void recordDynamicWindowData(
+  const double & curvature,
+  const geometry_msgs::msg::Twist & current_cmd_vel,
+  const geometry_msgs::msg::Twist & next_cmd_vel,
+  const double & regulated_linear_vel,
+  DynamicWindowBounds & dynamic_window,
+  const double & max_linear_vel,
+  const double & min_linear_vel,
+  const double & max_angular_vel,
+  const double & min_angular_vel,
+  const double & max_linear_accel,
+  const double & max_linear_decel,
+  const double & max_angular_accel,
+  const double & max_angular_decel,
+  const double & dt
+){
+  constexpr double Eps = 1e-3;
+
+  // calc actual velocity
+  auto calc_actual_velocity =
+    [&](const double & current_vel, const double & last_vel, const double & max_vel, const double & min_vel,
+    const double & max_accel, const double & max_decel)
+    {
+      double candidate_max_vel = 0.0;
+      double candidate_min_vel = 0.0;
+
+      if (last_vel > Eps) {
+        // if the last velocity is positive, acceleration means an increase in speed
+        candidate_max_vel = last_vel + max_accel * dt;
+        candidate_min_vel = last_vel - max_decel * dt;
+      } else if (last_vel < -Eps) {
+        // if the last velocity is negative, acceleration means a decrease in speed
+        candidate_max_vel = last_vel + max_decel * dt;
+        candidate_min_vel = last_vel - max_accel * dt;
+      } else {
+        // if the last velocity is zero, allow acceleration in both directions.
+        candidate_max_vel = last_vel + max_accel * dt;
+        candidate_min_vel = last_vel - max_accel * dt;
+      }
+
+      // clip to max/min velocity limits
+      candidate_max_vel = std::min(candidate_max_vel, max_vel);
+      candidate_min_vel = std::max(candidate_min_vel, min_vel);
+
+      // check whether current_vel is within [candidate_min_vel, candidate_max_vel]
+      if (current_vel > candidate_max_vel + Eps){
+        return candidate_max_vel;  // violation
+      }
+      else if (current_vel < candidate_min_vel - Eps) {
+        return candidate_min_vel;  // violation
+      } else {
+        return current_vel;  // no violation
+      }
+    };
+
+  // linear velocity
+  double actual_linear_vel = calc_actual_velocity(
+    next_cmd_vel.linear.x,
+    current_cmd_vel.linear.x,
+    max_linear_vel, min_linear_vel,
+    max_linear_accel, max_linear_decel);
+  // angular velocity
+  double actual_angular_vel = calc_actual_velocity(
+    next_cmd_vel.angular.z,
+    current_cmd_vel.angular.z,
+    max_angular_vel, min_angular_vel,
+    max_angular_accel, max_angular_decel);
+
+  // record by csv
+  static std::ofstream csv_stream;
+  static bool initialized = false;
+  static std::string csv_path;
+  if (!initialized) {
+    initialized = true;
+    try {
+      const auto pkg_share =
+        ament_index_cpp::get_package_share_directory("dwpp_test_simulation");
+      std::filesystem::path log_dir = std::filesystem::path(pkg_share) / "data";
+      std::error_code ec;
+      std::filesystem::create_directories(log_dir, ec);
+      csv_path = (log_dir / "dynamic_window_pure_pursuit_log.csv").string();
+    } catch (const std::exception & e) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("dynamic_window_pure_pursuit"),
+        "Failed to locate dwpp_test_simulation package (%s). Falling back to /tmp.",
+        e.what());
+      csv_path = "/tmp/dynamic_window_pure_pursuit_log.csv";
+    }
+
+    csv_stream.open(csv_path, std::ios::app);
+    if (!csv_stream.is_open()) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("dynamic_window_pure_pursuit"),
+        "Failed to open %s for logging.", csv_path.c_str());
+      return;
+    }
+  }
+
+  if (!csv_stream.is_open()) {
+    return;
+  }
+
+  static bool header_written = csv_stream.tellp() > 0;
+  if (!header_written) {
+    csv_stream << "timestamp,curvature,"
+                  "current_linear_vel,current_angular_vel,"
+                  "next_linear_vel,next_angular_vel,"
+                  "dw_max_linear_vel,dw_min_linear_vel,"
+                  "dw_max_angular_vel,dw_min_angular_vel,"
+                  "actual_linear_vel,actual_angular_vel,"
+                  "regulated_linear_velocity\n";
+    header_written = true;
+  }
+
+  const double timestamp = rclcpp::Clock(RCL_SYSTEM_TIME).now().seconds();
+
+  csv_stream << std::fixed << std::setprecision(6)
+             << timestamp << ','
+             << curvature << ','
+             << current_cmd_vel.linear.x << ',' << current_cmd_vel.angular.z << ','
+             << next_cmd_vel.linear.x << ',' << next_cmd_vel.angular.z << ','
+             << dynamic_window.max_linear_vel << ',' << dynamic_window.min_linear_vel << ','
+             << dynamic_window.max_angular_vel << ',' << dynamic_window.min_angular_vel << ','
+             << actual_linear_vel << ',' << actual_angular_vel << ','
+             << regulated_linear_vel
+             << '\n';
+  csv_stream.flush();
+
+}
+
 
 }  // namespace dynamic_window_pure_pursuit
 
