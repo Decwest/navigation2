@@ -224,6 +224,9 @@ protected:
   bool has_reached_xy_tolerance_ = false;
   geometry_msgs::msg::Twist last_command_velocity_;
 
+  // bool publisher
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr constraints_violation_flag_publisher_;
+
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_path_pub_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>>
   carrot_pub_;

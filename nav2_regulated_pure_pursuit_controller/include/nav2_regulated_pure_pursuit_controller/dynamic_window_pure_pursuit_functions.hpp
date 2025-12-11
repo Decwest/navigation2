@@ -111,6 +111,71 @@ inline DynamicWindowBounds computeDynamicWindow(
   return dynamic_window;
 }
 
+inline bool evaluateVelocityConstraints(
+  const geometry_msgs::msg::Twist & next_cmd_vel,
+  const geometry_msgs::msg::Twist & current_cmd_vel,
+  const double & max_linear_vel,
+  const double & min_linear_vel,
+  const double & max_angular_vel,
+  const double & min_angular_vel,
+  const double & max_linear_accel,
+  const double & max_linear_decel,
+  const double & max_angular_accel,
+  const double & max_angular_decel,
+  const double & dt)
+{
+  constexpr double Eps = 1e-2;
+
+  // function to evaluate velocity constraints for a single dimension
+  auto evaluate_velocity =
+    [&](const double & current_vel, const double & last_vel, const double & max_vel,
+    const double & min_vel,
+    const double & max_accel, const double & max_decel)
+    {
+      double candidate_max_vel = 0.0;
+      double candidate_min_vel = 0.0;
+
+      if (last_vel > Eps) {
+        // if the last velocity is positive, acceleration means an increase in speed
+        candidate_max_vel = last_vel + max_accel * dt;
+        candidate_min_vel = last_vel - max_decel * dt;
+      } else if (last_vel < -Eps) {
+        // if the last velocity is negative, acceleration means a decrease in speed
+        candidate_max_vel = last_vel + max_decel * dt;
+        candidate_min_vel = last_vel - max_accel * dt;
+      } else {
+        // if the last velocity is zero, allow acceleration in both directions.
+        candidate_max_vel = last_vel + max_accel * dt;
+        candidate_min_vel = last_vel - max_accel * dt;
+      }
+
+      // clip to max/min velocity limits
+      candidate_max_vel = std::min(candidate_max_vel, max_vel);
+      candidate_min_vel = std::max(candidate_min_vel, min_vel);
+
+      // check whether current_vel is within [candidate_min_vel, candidate_max_vel]
+      if (current_vel > candidate_max_vel + Eps || current_vel < candidate_min_vel - Eps) {
+        return true;  // violation
+      } else {
+        return false;  // no violation
+      }
+    };
+  // linear velocity
+  bool linear_violation = evaluate_velocity(
+    next_cmd_vel.linear.x,
+    current_cmd_vel.linear.x,
+    max_linear_vel, min_linear_vel,
+    max_linear_accel, max_linear_decel);
+  // angular velocity
+  bool angular_violation = evaluate_velocity(
+    next_cmd_vel.angular.z,
+    current_cmd_vel.angular.z,
+    max_angular_vel, min_angular_vel,
+    max_angular_accel, max_angular_decel);
+
+  return linear_violation || angular_violation;
+}
+
 /**
  * @brief                        Apply regulated linear velocity to the dynamic window
  * @param regulated_linear_vel   Regulated linear velocity

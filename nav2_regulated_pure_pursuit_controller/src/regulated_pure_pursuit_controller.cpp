@@ -79,6 +79,12 @@ void RegulatedPurePursuitController::configure(
     "curvature_lookahead_point", 1);
   is_rotating_to_heading_pub_ = node->create_publisher<std_msgs::msg::Bool>(
     "is_rotating_to_heading", 1);
+
+  // create publisher
+  constraints_violation_flag_publisher_ =
+    node->create_publisher<std_msgs::msg::Bool>(
+    "constraints_violation_flag", 1);
+
 }
 
 void RegulatedPurePursuitController::cleanup()
@@ -231,6 +237,16 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
 
   linear_vel = params_->max_linear_vel;
 
+  const double & max_linear_vel = params_->max_linear_vel;
+  const double & min_linear_vel = params_->min_linear_vel;
+  const double & max_angular_vel = params_->max_angular_vel;
+  const double & min_angular_vel = params_->min_angular_vel;
+
+  const double & max_linear_accel = params_->max_linear_accel;
+  const double & max_linear_decel = params_->max_linear_decel;
+  const double & max_angular_accel = params_->max_angular_accel;
+  const double & max_angular_decel = params_->max_angular_decel;
+
   // Make sure we're in compliance with basic constraints
   // For shouldRotateToPath, using x_vel_sign in order to support allow_reversing
   // and rotate_to_path_carrot_pose for the direction carrot pose:
@@ -280,16 +296,6 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
       // using last command velocity as a current velocity
       const geometry_msgs::msg::Twist current_speed = last_command_velocity_;
 
-      const double & max_linear_vel = params_->max_linear_vel;
-      const double & min_linear_vel = params_->min_linear_vel;
-      const double & max_angular_vel = params_->max_angular_vel;
-      const double & min_angular_vel = params_->min_angular_vel;
-
-      const double & max_linear_accel = params_->max_linear_accel;
-      const double & max_linear_decel = params_->max_linear_decel;
-      const double & max_angular_accel = params_->max_angular_accel;
-      const double & max_angular_decel = params_->max_angular_decel;
-
       // compute Dynamic Window
       dynamic_window_pure_pursuit::DynamicWindowBounds dynamic_window =
         dynamic_window_pure_pursuit::computeDynamicWindow(
@@ -329,6 +335,16 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
   cmd_vel.header = pose.header;
   cmd_vel.twist.linear.x = linear_vel;
   cmd_vel.twist.angular.z = angular_vel;
+
+  // evaluate whether the computed velocity is within velocity and acceleration constraints
+  std_msgs::msg::Bool constraints_violation_flag_msg;
+  constraints_violation_flag_msg.data = dynamic_window_pure_pursuit::evaluateVelocityConstraints(
+    cmd_vel.twist, last_command_velocity_, max_linear_vel, min_linear_vel, max_angular_vel,
+      min_angular_vel,
+    max_linear_accel, max_linear_decel, max_angular_accel, max_angular_decel,
+    control_duration_);
+
+  constraints_violation_flag_publisher_->publish(constraints_violation_flag_msg);
 
   last_command_velocity_ = cmd_vel.twist;
 
