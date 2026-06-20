@@ -186,6 +186,71 @@ TEST(GoalIntentExtractorTest, test_start_goal_finder)
   EXPECT_THROW(extractor.findStartandGoal(goal), nav2_core::IndeterminantNodesOnGraph);
 }
 
+TEST(GoalIntentExtractorTest, test_find_start_on_nearest_edge_candidates)
+{
+  Graph graph;
+  graph.resize(3);
+  GraphToIDMap id_map;
+  for (unsigned int i = 0; i != graph.size(); i++) {
+    graph[i].nodeid = i;
+    id_map[i] = i;
+  }
+
+  graph[0].coords.x = 0.0;
+  graph[0].coords.y = 0.0;
+  graph[1].coords.x = 1.0;
+  graph[1].coords.y = 0.0;
+  graph[2].coords.x = 2.0;
+  graph[2].coords.y = 0.0;
+
+  EdgeCost edge_cost;
+  edge_cost.cost = 1.0;
+  edge_cost.overridable = false;
+  graph[0].addEdge(edge_cost, &graph[1], 10u);
+  graph[1].addEdge(edge_cost, &graph[2], 11u);
+
+  std::shared_ptr<nav2_costmap_2d::CostmapSubscriber> costmap_subscriber = nullptr;
+  geometry_msgs::msg::PoseStamped start, goal;
+  start.pose.position.x = 0.45;
+  start.pose.position.y = 0.20;
+
+  auto disabled_node =
+    std::make_shared<nav2_util::LifecycleNode>("nearest_edge_disabled_test");
+  GoalIntentExtractorWrapper disabled_extractor;
+  disabled_extractor.configure(
+    disabled_node, graph, &id_map, nullptr, costmap_subscriber, "map", "map", "base_link");
+  disabled_extractor.setStartAndGoal(start, goal);
+  EXPECT_FALSE(disabled_extractor.useStartOnNearestEdge());
+  EXPECT_TRUE(disabled_extractor.findStartOnNearestEdgeCandidates().empty());
+
+  auto enabled_node =
+    std::make_shared<nav2_util::LifecycleNode>("nearest_edge_enabled_test");
+  enabled_node->declare_parameter("use_start_on_nearest_edge", rclcpp::ParameterValue(true));
+  enabled_node->declare_parameter("max_start_to_nearest_edge_dist", rclcpp::ParameterValue(0.5));
+  GoalIntentExtractorWrapper enabled_extractor;
+  enabled_extractor.configure(
+    enabled_node, graph, &id_map, nullptr, costmap_subscriber, "map", "map", "base_link");
+  enabled_extractor.setStartAndGoal(start, goal);
+
+  auto candidates = enabled_extractor.findStartOnNearestEdgeCandidates();
+  ASSERT_FALSE(candidates.empty());
+  EXPECT_EQ(candidates.front().edge->edgeid, 10u);
+  EXPECT_NEAR(candidates.front().closest_pt_on_edge.x, 0.45, 1e-6);
+  EXPECT_NEAR(candidates.front().closest_pt_on_edge.y, 0.0, 1e-6);
+  EXPECT_NEAR(candidates.front().distance, 0.20, 1e-6);
+
+  auto threshold_node =
+    std::make_shared<nav2_util::LifecycleNode>("nearest_edge_threshold_test");
+  threshold_node->declare_parameter("use_start_on_nearest_edge", rclcpp::ParameterValue(true));
+  threshold_node->declare_parameter(
+    "max_start_to_nearest_edge_dist", rclcpp::ParameterValue(0.1));
+  GoalIntentExtractorWrapper threshold_extractor;
+  threshold_extractor.configure(
+    threshold_node, graph, &id_map, nullptr, costmap_subscriber, "map", "map", "base_link");
+  threshold_extractor.setStartAndGoal(start, goal);
+  EXPECT_TRUE(threshold_extractor.findStartOnNearestEdgeCandidates().empty());
+}
+
 TEST(GoalIntentExtractorTest, test_pruning)
 {
   auto node = std::make_shared<nav2_util::LifecycleNode>("goal_intent_extractor_test");

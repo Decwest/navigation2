@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License. Reserved.
 
+#include <cmath>
+#include <limits>
+
 #include "nav2_route/route_server.hpp"
 
 using nav2_util::declare_parameter_if_not_declared;
@@ -235,13 +238,93 @@ Route RouteServer::findRoute(
 {
   // Find the search boundaries
   auto [start_route, end_route] = goal_intent_extractor_->findStartandGoal(goal);
+  const bool rerouting =
+    rerouting_info.rerouting_start_id != std::numeric_limits<unsigned int>::max();
 
   // If we're rerouting, use the rerouting start node and pose as the new start
-  if (rerouting_info.rerouting_start_id != std::numeric_limits<unsigned int>::max()) {
+  if (rerouting) {
     start_route = id_to_graph_map_.at(rerouting_info.rerouting_start_id);
     goal_intent_extractor_->overrideStart(rerouting_info.rerouting_start_pose);
   }
 
+  auto populate_route_request = [&](unsigned int start_node, unsigned int goal_node) {
+      RouteRequest route_request;
+      route_request.start_nodeid = graph_.at(start_node).nodeid;
+      route_request.goal_nodeid = graph_.at(goal_node).nodeid;
+      route_request.start_pose = goal_intent_extractor_->getStart();
+      route_request.goal_pose = goal->goal;
+      route_request.use_poses = goal->use_poses;
+      return route_request;
+    };
+
+  if (!rerouting && goal->use_poses && goal_intent_extractor_->useStartOnNearestEdge()) {
+    auto candidates = goal_intent_extractor_->findStartOnNearestEdgeCandidates();
+    Route best_route;
+    StartOnEdgeCandidate best_candidate;
+    float best_route_cost = std::numeric_limits<float>::max();
+    bool found_valid_start_edge = false;
+
+    for (const auto & candidate : candidates) {
+      if (!candidate.edge || !candidate.edge->end) {
+        continue;
+      }
+
+      const unsigned int candidate_start = id_to_graph_map_.at(candidate.edge->end->nodeid);
+      auto candidate_request = populate_route_request(candidate_start, end_route);
+
+      float start_edge_cost = 0.0f;
+      if (!route_planner_->validateEdge(
+          candidate.edge, rerouting_info.blocked_ids, candidate_request, start_edge_cost))
+      {
+        continue;
+      }
+
+      try {
+        Route route;
+        if (candidate_start == end_route) {
+          route.route_cost = 0.0;
+          route.start_node = &graph_.at(candidate_start);
+        } else {
+          route = route_planner_->findRoute(
+            graph_, candidate_start, end_route, rerouting_info.blocked_ids, candidate_request);
+        }
+
+        const float remaining_start_edge_dist = hypotf(
+          candidate.edge->end->coords.x - candidate.closest_pt_on_edge.x,
+          candidate.edge->end->coords.y - candidate.closest_pt_on_edge.y);
+        const float start_edge_len = candidate.edge->getEdgeLength();
+        if (start_edge_len > 1e-6f) {
+          route.route_cost += start_edge_cost * remaining_start_edge_dist / start_edge_len;
+        }
+
+        if (!found_valid_start_edge || route.route_cost < best_route_cost) {
+          best_route = route;
+          best_candidate = candidate;
+          best_route_cost = route.route_cost;
+          found_valid_start_edge = true;
+        }
+      } catch (nav2_core::NoValidRouteCouldBeFound &) {
+        rerouting_info.curr_edge = nullptr;
+        rerouting_info.closest_pt_on_edge = Coordinates();
+        rerouting_info.start_on_nearest_edge = false;
+        continue;
+      } catch (nav2_core::TimedOut &) {
+        rerouting_info.curr_edge = nullptr;
+        rerouting_info.closest_pt_on_edge = Coordinates();
+        rerouting_info.start_on_nearest_edge = false;
+        continue;
+      }
+    }
+
+    if (found_valid_start_edge) {
+      rerouting_info.curr_edge = best_candidate.edge;
+      rerouting_info.closest_pt_on_edge = best_candidate.closest_pt_on_edge;
+      rerouting_info.start_on_nearest_edge = true;
+      return goal_intent_extractor_->pruneStartandGoal(best_route, goal, rerouting_info);
+    }
+  }
+
+  rerouting_info.start_on_nearest_edge = false;
   Route route;
   if (start_route == end_route) {
     // Succeed with a single-point route
@@ -249,12 +332,7 @@ Route RouteServer::findRoute(
     route.start_node = &graph_.at(start_route);
   } else {
     // Populate request data (start & goal id, start & goal pose, if set) for routing
-    RouteRequest route_request;
-    route_request.start_nodeid = start_route;
-    route_request.goal_nodeid = end_route;
-    route_request.start_pose = goal_intent_extractor_->getStart();
-    route_request.goal_pose = goal->goal;
-    route_request.use_poses = goal->use_poses;
+    auto route_request = populate_route_request(start_route, end_route);
 
     // Compute the route via graph-search, returns a node-edge sequence
     route = route_planner_->findRoute(

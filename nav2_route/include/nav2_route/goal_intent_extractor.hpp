@@ -126,6 +126,18 @@ public:
    */
   geometry_msgs::msg::PoseStamped getStart();
 
+  /**
+   * @brief Whether route planning should start on the nearest graph edge.
+   * @return If the feature is enabled
+   */
+  bool useStartOnNearestEdge() const;
+
+  /**
+   * @brief Find candidate directed edges nearest to the start pose.
+   * @return Candidate nearest edge starts sorted by distance from start pose
+   */
+  StartOnEdgeCandidateVector findStartOnNearestEdgeCandidates();
+
 protected:
   rclcpp::Logger logger_{rclcpp::get_logger("GoalIntentExtractor")};
   std::shared_ptr<NodeSpatialTree> node_spatial_tree_;
@@ -137,9 +149,10 @@ protected:
   std::string base_frame_;
   std::string global_frame_;
   geometry_msgs::msg::PoseStamped start_, goal_;
-  bool prune_goal_, enable_search_;
+  bool prune_goal_, enable_search_, use_start_on_nearest_edge_;
   int max_nn_search_iterations_;
   float max_dist_from_edge_, min_dist_from_goal_, min_dist_from_start_;
+  float max_start_to_nearest_edge_dist_;
 };
 
 }  // namespace nav2_route

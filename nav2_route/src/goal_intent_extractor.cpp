@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <memory>
 #include <vector>
@@ -60,6 +62,16 @@ void GoalIntentExtractor::configure(
     node, "min_prune_dist_from_start", rclcpp::ParameterValue(0.10));
   min_dist_from_start_ = static_cast<float>(
     node->get_parameter("min_prune_dist_from_start").as_double());
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, "use_start_on_nearest_edge", rclcpp::ParameterValue(false));
+  use_start_on_nearest_edge_ = node->get_parameter("use_start_on_nearest_edge").as_bool();
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, "max_start_to_nearest_edge_dist",
+    rclcpp::ParameterValue(static_cast<double>(max_dist_from_edge_)));
+  max_start_to_nearest_edge_dist_ = static_cast<float>(
+    node->get_parameter("max_start_to_nearest_edge_dist").as_double());
 
   nav2_util::declare_parameter_if_not_declared(
     node, "enable_nn_search", rclcpp::ParameterValue(true));
@@ -235,8 +247,11 @@ Route GoalIntentExtractor::pruneStartandGoal(
   Route pruned_route = input_route;
 
   // Grab and update the rerouting state
+  bool start_on_nearest_edge = rerouting_info.start_on_nearest_edge;
   EdgePtr last_curr_edge = rerouting_info.curr_edge;
-  rerouting_info.curr_edge = nullptr;
+  if (!start_on_nearest_edge) {
+    rerouting_info.curr_edge = nullptr;
+  }
   bool first_time = rerouting_info.first_time;
   rerouting_info.first_time = false;
 
@@ -245,29 +260,34 @@ Route GoalIntentExtractor::pruneStartandGoal(
     return pruned_route;
   }
 
-  // Check on pruning the start node
-  NodePtr first = pruned_route.start_node;
-  NodePtr next = pruned_route.edges[0]->end;
-  float vrx = next->coords.x - first->coords.x;
-  float vry = next->coords.y - first->coords.y;
-  float vpx = start_.pose.position.x - first->coords.x;
-  float vpy = start_.pose.position.y - first->coords.y;
-  float dot_prod = utils::normalizedDot(vrx, vry, vpx, vpy);
-  Coordinates closest_pt_on_edge = utils::findClosestPoint(start_, first->coords, next->coords);
-  if (dot_prod > EPSILON &&  // A projection exists
-    hypotf(vpx, vpy) > min_dist_from_start_ &&  // We're not on the node to prune entire edge
-    utils::distance(closest_pt_on_edge, start_) <= max_dist_from_edge_)  // Close enough to edge
-  {
-    // Record the pruned edge information if its the same edge as previously routed so that
-    // the tracker can seed this information into its state to proceed with its task losslessly
-    if (last_curr_edge && last_curr_edge->edgeid == pruned_route.edges.front()->edgeid) {
-      rerouting_info.closest_pt_on_edge = closest_pt_on_edge;
-      rerouting_info.curr_edge = pruned_route.edges.front();
-    }
+  NodePtr next = nullptr;
+  float vrx = 0.0f, vry = 0.0f, vpx = 0.0f, vpy = 0.0f, dot_prod = 0.0f;
+  Coordinates closest_pt_on_edge;
+  if (!start_on_nearest_edge) {
+    // Check on pruning the start node
+    NodePtr first = pruned_route.start_node;
+    next = pruned_route.edges[0]->end;
+    vrx = next->coords.x - first->coords.x;
+    vry = next->coords.y - first->coords.y;
+    vpx = start_.pose.position.x - first->coords.x;
+    vpy = start_.pose.position.y - first->coords.y;
+    dot_prod = utils::normalizedDot(vrx, vry, vpx, vpy);
+    closest_pt_on_edge = utils::findClosestPoint(start_, first->coords, next->coords);
+    if (dot_prod > EPSILON &&  // A projection exists
+      hypotf(vpx, vpy) > min_dist_from_start_ &&  // We're not on the node to prune entire edge
+      utils::distance(closest_pt_on_edge, start_) <= max_dist_from_edge_)  // Close enough to edge
+    {
+      // Record the pruned edge information if its the same edge as previously routed so that
+      // the tracker can seed this information into its state to proceed with its task losslessly
+      if (last_curr_edge && last_curr_edge->edgeid == pruned_route.edges.front()->edgeid) {
+        rerouting_info.closest_pt_on_edge = closest_pt_on_edge;
+        rerouting_info.curr_edge = pruned_route.edges.front();
+      }
 
-    pruned_route.start_node = next;
-    pruned_route.route_cost -= pruned_route.edges.front()->end->search_state.traversal_cost;
-    pruned_route.edges.erase(pruned_route.edges.begin());
+      pruned_route.start_node = next;
+      pruned_route.route_cost -= pruned_route.edges.front()->end->search_state.traversal_cost;
+      pruned_route.edges.erase(pruned_route.edges.begin());
+    }
   }
 
   // Don't prune the goal if requested, if given a known goal_id (no effect), or now empty
@@ -299,6 +319,48 @@ Route GoalIntentExtractor::pruneStartandGoal(
 geometry_msgs::msg::PoseStamped GoalIntentExtractor::getStart()
 {
   return start_;
+}
+
+bool GoalIntentExtractor::useStartOnNearestEdge() const
+{
+  return use_start_on_nearest_edge_;
+}
+
+StartOnEdgeCandidateVector GoalIntentExtractor::findStartOnNearestEdgeCandidates()
+{
+  StartOnEdgeCandidateVector candidates;
+  if (!use_start_on_nearest_edge_ || !graph_) {
+    return candidates;
+  }
+
+  for (auto & node : *graph_) {
+    for (auto & edge : node.neighbors) {
+      if (!edge.start || !edge.end || edge.getEdgeLength() <= EPSILON) {
+        continue;
+      }
+
+      Coordinates closest_pt_on_edge =
+        utils::findClosestPoint(start_, edge.start->coords, edge.end->coords);
+      const float dist_from_edge_start = hypotf(
+        closest_pt_on_edge.x - edge.start->coords.x,
+        closest_pt_on_edge.y - edge.start->coords.y);
+      if (dist_from_edge_start <= min_dist_from_start_) {
+        continue;
+      }
+
+      const float dist_to_start = utils::distance(closest_pt_on_edge, start_);
+      if (dist_to_start <= max_start_to_nearest_edge_dist_) {
+        candidates.push_back({&edge, closest_pt_on_edge, dist_to_start});
+      }
+    }
+  }
+
+  std::sort(
+    candidates.begin(), candidates.end(),
+    [](const StartOnEdgeCandidate & a, const StartOnEdgeCandidate & b) {
+      return a.distance < b.distance;
+    });
+  return candidates;
 }
 
 template Route GoalIntentExtractor::pruneStartandGoal<nav2_msgs::action::ComputeRoute::Goal>(

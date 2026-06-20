@@ -176,6 +176,19 @@ struct Coordinates
 };
 
 /**
+ * @struct nav2_route::StartOnEdgeCandidate
+ * @brief A candidate directed edge and nearest point to begin a route from.
+ */
+struct StartOnEdgeCandidate
+{
+  EdgePtr edge{nullptr};
+  Coordinates closest_pt_on_edge;
+  float distance{std::numeric_limits<float>::max()};
+};
+
+typedef std::vector<StartOnEdgeCandidate> StartOnEdgeCandidateVector;
+
+/**
  * @struct nav2_route::Node
  * @brief An object to store the nodes in the graph file
  */
@@ -277,6 +290,7 @@ struct ReroutingState
   // It is managed by both the goal intent extractor and the route tracker.
   EdgePtr curr_edge{nullptr};
   Coordinates closest_pt_on_edge;
+  bool start_on_nearest_edge{false};
 
   // Used to mark the route tracking state before rerouting was requested.
   // When route tracking made some progress, the Start ID and pose are populated
@@ -293,6 +307,7 @@ struct ReroutingState
     first_time = true;
     curr_edge = nullptr;
     closest_pt_on_edge = Coordinates();
+    start_on_nearest_edge = false;
     rerouting_start_pose = geometry_msgs::msg::PoseStamped();
   }
 };

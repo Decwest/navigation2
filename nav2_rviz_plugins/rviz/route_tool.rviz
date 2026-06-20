@@ -27,7 +27,7 @@ Panels:
     Name: Time
     SyncMode: 0
     SyncSource: ""
-  - Class: nav2_rviz_plugins/Route Tool
+  - Class: nav2_rviz_plugins/RouteTool
     Name: Route Tool
 Visualization Manager:
   Class: ""

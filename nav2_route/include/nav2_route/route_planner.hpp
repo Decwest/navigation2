@@ -74,6 +74,20 @@ public:
     const std::vector<unsigned int> & blocked_ids,
     const RouteRequest & route_request);
 
+  /**
+   * @brief Validate and score a single edge using the configured edge scorers
+   * @param edge Edge pointer to validate
+   * @param blocked_ids A set of blocked node and edge IDs not to traverse
+   * @param route_request Route request context for edge scorers
+   * @param score Output edge traversal score
+   * @return If this edge is valid for traversal
+   */
+  bool validateEdge(
+    const EdgePtr edge,
+    const std::vector<unsigned int> & blocked_ids,
+    const RouteRequest & route_request,
+    float & score);
+
 protected:
   /**
    * @brief Reset the search state of the graph nodes

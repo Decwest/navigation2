@@ -74,6 +74,21 @@ Route RoutePlanner::findRoute(
   return route;
 }
 
+bool RoutePlanner::validateEdge(
+  const EdgePtr edge,
+  const std::vector<unsigned int> & blocked_ids,
+  const RouteRequest & route_request,
+  float & score)
+{
+  if (!edge || !edge->start || !edge->end) {
+    return false;
+  }
+
+  start_id_ = edge->start->nodeid;
+  goal_id_ = route_request.goal_nodeid;
+  return getTraversalCost(edge, score, blocked_ids, route_request);
+}
+
 void RoutePlanner::resetSearchStates(Graph & graph)
 {
   // For graphs < 75,000 nodes, iterating through one time on initialization to reset the state

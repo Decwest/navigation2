@@ -351,6 +351,94 @@ TEST(RouteServerTest, test_complete_action_api)
   server.reset();
 }
 
+TEST(RouteServerTest, test_compute_route_start_on_nearest_edge)
+{
+  std::string pkg_share_dir = ament_index_cpp::get_package_share_directory("nav2_route");
+  std::string real_file = pkg_share_dir + "/graphs/sample_graph.geojson";
+
+  rclcpp::NodeOptions options;
+  auto server = std::make_shared<RouteServerWrapper>(options);
+  server->declare_parameter("graph_filepath", rclcpp::ParameterValue(real_file));
+  server->declare_parameter("use_start_on_nearest_edge", rclcpp::ParameterValue(true));
+  server->declare_parameter("max_start_to_nearest_edge_dist", rclcpp::ParameterValue(0.25));
+  auto node_thread = std::make_unique<nav2_util::NodeThread>(server);
+  server->startup();
+
+  auto node2 = std::make_shared<rclcpp::Node>("nearest_edge_route_client");
+  auto compute_client =
+    rclcpp_action::create_client<nav2_msgs::action::ComputeRoute>(node2, "compute_route");
+
+  nav2_msgs::action::ComputeRoute::Goal goal;
+  goal.use_start = true;
+  goal.use_poses = true;
+  goal.start.header.frame_id = "map";
+  goal.start.pose.position.x = 0.5;
+  goal.start.pose.position.y = 0.2;
+  goal.goal.header.frame_id = "map";
+  goal.goal.pose.position.x = 2.0;
+  goal.goal.pose.position.y = 0.0;
+
+  auto future_goal = compute_client->async_send_goal(goal);
+  rclcpp::spin_until_future_complete(node2, future_goal);
+  auto goal_handle = future_goal.get();
+  auto result_future = compute_client->async_get_result(goal_handle);
+  rclcpp::spin_until_future_complete(node2, result_future);
+  auto result = result_future.get().result;
+
+  ASSERT_FALSE(result->path.poses.empty());
+  EXPECT_NEAR(result->path.poses.front().pose.position.x, 0.5, 1e-6);
+  EXPECT_NEAR(result->path.poses.front().pose.position.y, 0.0, 1e-6);
+
+  server->shutdown();
+  node_thread.reset();
+  server.reset();
+}
+
+TEST(RouteServerTest, test_start_on_nearest_edge_chooses_lowest_total_route_cost)
+{
+  std::string pkg_share_dir = ament_index_cpp::get_package_share_directory("nav2_route");
+  std::string real_file = pkg_share_dir + "/graphs/sample_graph.geojson";
+
+  rclcpp::NodeOptions options;
+  auto server = std::make_shared<RouteServerWrapper>(options);
+  server->declare_parameter("graph_filepath", rclcpp::ParameterValue(real_file));
+  server->declare_parameter("use_start_on_nearest_edge", rclcpp::ParameterValue(true));
+  server->declare_parameter("max_start_to_nearest_edge_dist", rclcpp::ParameterValue(0.25));
+  auto node_thread = std::make_unique<nav2_util::NodeThread>(server);
+  server->startup();
+
+  auto node2 = std::make_shared<rclcpp::Node>("nearest_edge_route_cost_client");
+  auto compute_client =
+    rclcpp_action::create_client<nav2_msgs::action::ComputeRoute>(node2, "compute_route");
+
+  nav2_msgs::action::ComputeRoute::Goal goal;
+  goal.use_start = true;
+  goal.use_poses = true;
+  goal.start.header.frame_id = "map";
+  goal.start.pose.position.x = 1.5;
+  goal.start.pose.position.y = 0.2;
+  goal.goal.header.frame_id = "map";
+  goal.goal.pose.position.x = 0.0;
+  goal.goal.pose.position.y = 0.0;
+
+  auto future_goal = compute_client->async_send_goal(goal);
+  rclcpp::spin_until_future_complete(node2, future_goal);
+  auto goal_handle = future_goal.get();
+  auto result_future = compute_client->async_get_result(goal_handle);
+  rclcpp::spin_until_future_complete(node2, result_future);
+  auto result = result_future.get().result;
+
+  ASSERT_FALSE(result->path.poses.empty());
+  EXPECT_NEAR(result->path.poses.front().pose.position.x, 1.5, 1e-6);
+  EXPECT_NEAR(result->path.poses.front().pose.position.y, 0.0, 1e-6);
+  ASSERT_FALSE(result->route.nodes.empty());
+  EXPECT_EQ(result->route.nodes.front().nodeid, 1u);
+
+  server->shutdown();
+  node_thread.reset();
+  server.reset();
+}
+
 TEST(RouteServerTest, test_error_codes)
 {
   std::string pkg_share_dir = ament_index_cpp::get_package_share_directory("nav2_route");

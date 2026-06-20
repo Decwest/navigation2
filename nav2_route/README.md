@@ -142,6 +142,8 @@ route_server:
     max_prune_dist_from_edge: 8.0                       # Max distance from an edge to consider pruning it as in-progress (e.g. if we're too far away from the edge, its nonsensical to prune it)
     min_prune_dist_from_goal: 0.15                      # Min distance from goal node away from goal pose to consider goal node pruning as considering it as being passed (in case goal pose is very close to a goal node, but not exact)
     min_prune_dist_from_start: 0.10                     # Min distance from start node away from start pose to consider start node pruning as considering it as being passed (in case start pose is very close to a start node, but not exact)
+    use_start_on_nearest_edge: false                    # Whether pose-based routes should begin on the nearest directed graph edge instead of the nearest graph node.
+    max_start_to_nearest_edge_dist: 8.0                 # Max distance from the start pose to an edge to consider starting on that edge.
     prune_goal: true                              # Whether pruning the goal nodes from the route due to being past the goal pose requested is possible (pose requests only)
     enable_nn_search: true                        # Whether to enable breadth first search considering the costmap to find the node closest to the start and edge poses, rather than using the euclidean nearest neighbor alone.
     max_nn_search_iterations: 10000               # Maximum number of iterations for breadth-first search.
