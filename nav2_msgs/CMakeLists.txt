@@ -19,6 +19,7 @@ add_compile_options(-Wno-error=deprecated)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CollisionMonitorState.msg"
   "msg/CollisionDetectorState.msg"
+  "msg/ControllerComputation.msg"
   "msg/Costmap.msg"
   "msg/CostmapMetaData.msg"
   "msg/CostmapUpdate.msg"
