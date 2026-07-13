@@ -222,6 +222,9 @@ ControllerServer::on_configure(const rclcpp_lifecycle::State & state)
 
   odom_sub_ = std::make_unique<nav_2d_utils::OdomSubscriber>(node);
   vel_publisher_ = std::make_unique<nav2_util::TwistPublisher>(node, "cmd_vel", 1);
+  controller_computation_publisher_ =
+    create_publisher<nav2_msgs::msg::ControllerComputation>(
+    "~/computation_time", rclcpp::QoS(rclcpp::KeepLast(100)).reliable());
 
   double action_server_result_timeout;
   get_parameter("action_server_result_timeout", action_server_result_timeout);
@@ -270,6 +273,7 @@ ControllerServer::on_activate(const rclcpp_lifecycle::State & /*state*/)
     it->second->activate();
   }
   vel_publisher_->on_activate();
+  controller_computation_publisher_->on_activate();
   action_server_->activate();
 
   auto node = shared_from_this();
@@ -316,6 +320,7 @@ ControllerServer::on_deactivate(const rclcpp_lifecycle::State & /*state*/)
   publishVelocity(velocity);
 
   vel_publisher_->on_deactivate();
+  controller_computation_publisher_->on_deactivate();
 
   remove_on_set_parameters_callback(dyn_params_handler_.get());
   dyn_params_handler_.reset();
@@ -349,6 +354,7 @@ ControllerServer::on_cleanup(const rclcpp_lifecycle::State & /*state*/)
   odom_sub_.reset();
   costmap_thread_.reset();
   vel_publisher_.reset();
+  controller_computation_publisher_.reset();
   speed_limit_sub_.reset();
 
   return nav2_util::CallbackReturn::SUCCESS;
@@ -636,13 +642,25 @@ void ControllerServer::computeAndPublishVelocity()
   nav_2d_msgs::msg::Twist2D twist = getThresholdedTwist(odom_sub_->getTwist());
 
   geometry_msgs::msg::TwistStamped cmd_vel_2d;
+  const auto velocity = nav_2d_utils::twist2Dto3D(twist);
+  auto & controller = controllers_[current_controller_];
+  auto * goal_checker = goal_checkers_[current_goal_checker_].get();
 
   try {
-    cmd_vel_2d =
-      controllers_[current_controller_]->computeVelocityCommands(
-      pose,
-      nav_2d_utils::twist2Dto3D(twist),
-      goal_checkers_[current_goal_checker_].get());
+    const auto computation_stamp = now();
+    const auto computation_start = std::chrono::steady_clock::now();
+    try {
+      cmd_vel_2d =
+        controller->computeVelocityCommands(pose, velocity, goal_checker);
+    } catch (...) {
+      const auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - computation_start).count();
+      publishControllerComputation(computation_stamp, duration_ns, false);
+      throw;
+    }
+    const auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now() - computation_start).count();
+    publishControllerComputation(computation_stamp, duration_ns, true);
     last_valid_cmd_time_ = now();
     cmd_vel_2d.header.frame_id = costmap_ros_->getBaseFrameID();
     cmd_vel_2d.header.stamp = last_valid_cmd_time_;
@@ -695,6 +713,36 @@ void ControllerServer::computeAndPublishVelocity()
 
   RCLCPP_DEBUG(get_logger(), "Publishing velocity at time %.2f", now().seconds());
   publishVelocity(cmd_vel_2d);
+}
+
+void ControllerServer::publishControllerComputation(
+  const rclcpp::Time & start_stamp, int64_t duration_ns, bool success)
+{
+  if (!controller_computation_publisher_ ||
+    !controller_computation_publisher_->is_activated())
+  {
+    return;
+  }
+
+  nav2_msgs::msg::ControllerComputation msg;
+  msg.header.stamp = start_stamp;
+  msg.sequence = controller_computation_sequence_++;
+  msg.controller_id = current_controller_;
+  msg.duration.sec = static_cast<int32_t>(duration_ns / 1000000000LL);
+  msg.duration.nanosec = static_cast<uint32_t>(duration_ns % 1000000000LL);
+  msg.success = success;
+
+  try {
+    controller_computation_publisher_->publish(msg);
+  } catch (const std::exception & error) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Failed to publish controller computation timing: %s", error.what());
+  } catch (...) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Failed to publish controller computation timing");
+  }
 }
 
 void ControllerServer::updateGlobalPath()

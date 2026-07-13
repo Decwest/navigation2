@@ -15,6 +15,7 @@
 #ifndef NAV2_CONTROLLER__CONTROLLER_SERVER_HPP_
 #define NAV2_CONTROLLER__CONTROLLER_SERVER_HPP_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -28,6 +29,7 @@
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "nav2_msgs/action/follow_path.hpp"
+#include "nav2_msgs/msg/controller_computation.hpp"
 #include "nav2_msgs/msg/speed_limit.hpp"
 #include "nav_2d_utils/odom_subscriber.hpp"
 #include "nav2_util/lifecycle_node.hpp"
@@ -177,6 +179,14 @@ protected:
    */
   void publishZeroVelocity();
   /**
+   * @brief Publish the result of one controller plugin invocation
+   * @param start_stamp ROS timestamp captured immediately before the invocation
+   * @param duration_ns Wall-clock duration spent in computeVelocityCommands
+   * @param success Whether the plugin returned without throwing
+   */
+  void publishControllerComputation(
+    const rclcpp::Time & start_stamp, int64_t duration_ns, bool success);
+  /**
    * @brief Checks if goal is reached
    * @return true or false
    */
@@ -231,6 +241,8 @@ protected:
   // Publishers and subscribers
   std::unique_ptr<nav_2d_utils::OdomSubscriber> odom_sub_;
   std::unique_ptr<nav2_util::TwistPublisher> vel_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<nav2_msgs::msg::ControllerComputation>::SharedPtr
+    controller_computation_publisher_;
   rclcpp::Subscription<nav2_msgs::msg::SpeedLimit>::SharedPtr speed_limit_sub_;
 
   // Progress Checker Plugin
@@ -259,6 +271,7 @@ protected:
   std::vector<std::string> controller_ids_;
   std::vector<std::string> controller_types_;
   std::string controller_ids_concat_, current_controller_;
+  uint64_t controller_computation_sequence_{0};
 
   double controller_frequency_;
   double min_x_velocity_threshold_;
