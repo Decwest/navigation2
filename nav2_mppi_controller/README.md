@@ -52,6 +52,7 @@ This process is then repeated a number of times and returns a converged solution
  | temperature                | double | Default: 0.3. Selectiveness of trajectories by their costs (The closer this value to 0, the "more" we take in consideration controls with less cost), 0 mean use control with best cost, huge value will lead to just taking mean of all trajectories without cost consideration                                                   |
  | gamma                      | double | Default: 0.015. A trade-off between smoothness (high) and low energy (low). This is a complex parameter that likely won't need to be changed from the default of `0.1` which works well for a broad range of cases. See Section 3D-2 in "Information Theoretic Model Predictive Control: Theory and Applications to Autonomous Driving" for detailed information.       |
  | visualize                  | bool   | Default: false. Publish visualization of trajectories, which can slow down the controller significantly. Use only for debugging.                                                                                                                                       |
+ | use_last_command_velocity  | bool   | Default false. If true, initialize each rollout from the previous raw controller command instead of odometry. The stored command starts at zero and is cleared on reset or deactivation, matching DWPP's open-loop velocity update. |
  | retry_attempt_limit        | int    | Default 1. Number of attempts to find feasible trajectory on failure for soft-resets before reporting failure.                                                                                                                                                                                                       |
  | regenerate_noises          | bool   | Default false. Whether to regenerate noises each iteration or use single noise distribution computed on initialization and reset. Practically, this is found to work fine since the trajectories are being sampled stochastically from a normal distribution and reduces compute jittering at run-time due to thread wake-ups to resample normal distribution. |
 
@@ -88,6 +89,7 @@ This process is then repeated a number of times and returns a converged solution
  | cost_weight                      | double | Default 3.0. Weight to apply to critic term.                                                                |
  | cost_power                       | int    | Default 1. Power order to apply to term.                                                                    |
  | threshold_to_consider            | double | Default 0.5. Minimal distance between robot and goal above which angle goal cost considered.               |
+ | symmetric_yaw_tolerance | bool | Default false. Enable for symmetric robots - allows goal approach from either forward or backward (goal ± 180°) without penalty if either is valid and wish the controller to select the easiest one itself. |
 
 #### Goal Critic
  | Parameter            | Type   | Definition                                                                                                  |

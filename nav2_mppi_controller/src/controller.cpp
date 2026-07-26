@@ -37,6 +37,7 @@ void MPPIController::configure(
   // Get high-level controller parameters
   auto getParam = parameters_handler_->getParamGetter(name_);
   getParam(visualize_, "visualize", false);
+  getParam(use_last_command_velocity_, "use_last_command_velocity", false);
 
   // Configure composed objects
   optimizer_.initialize(parent_, name_, costmap_ros_, parameters_handler_.get());
@@ -46,6 +47,9 @@ void MPPIController::configure(
     costmap_ros_->getGlobalFrameID(), parameters_handler_.get());
 
   RCLCPP_INFO(logger_, "Configured MPPI Controller: %s", name_.c_str());
+  RCLCPP_INFO(
+    logger_, "MPPI rollout initial velocity source: %s",
+    use_last_command_velocity_ ? "last controller command" : "odometry");
 }
 
 void MPPIController::cleanup()
@@ -66,12 +70,14 @@ void MPPIController::activate()
 void MPPIController::deactivate()
 {
   trajectory_visualizer_.on_deactivate();
+  resetLastCommandVelocity();
   RCLCPP_INFO(logger_, "Deactivated MPPI Controller: %s", name_.c_str());
 }
 
 void MPPIController::reset()
 {
   optimizer_.reset(false /*Don't reset zone-based speed limits between requests*/);
+  resetLastCommandVelocity();
 }
 
 geometry_msgs::msg::TwistStamped MPPIController::computeVelocityCommands(
@@ -91,8 +97,9 @@ geometry_msgs::msg::TwistStamped MPPIController::computeVelocityCommands(
   nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
   std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> costmap_lock(*(costmap->getMutex()));
 
+  const auto & optimizer_speed = getOptimizerSpeed(robot_speed);
   geometry_msgs::msg::TwistStamped cmd =
-    optimizer_.evalControl(robot_pose, robot_speed, transformed_plan, goal, goal_checker);
+    optimizer_.evalControl(robot_pose, optimizer_speed, transformed_plan, goal, goal_checker);
 
 #ifdef BENCHMARK_TESTING
   auto end = std::chrono::system_clock::now();
@@ -104,7 +111,22 @@ geometry_msgs::msg::TwistStamped MPPIController::computeVelocityCommands(
     visualize(std::move(transformed_plan), cmd.header.stamp);
   }
 
+  // Match DWPP's open-loop velocity update: store the raw controller output,
+  // before downstream velocity smoothing or collision monitoring.
+  last_command_velocity_ = cmd.twist;
+
   return cmd;
+}
+
+const geometry_msgs::msg::Twist & MPPIController::getOptimizerSpeed(
+  const geometry_msgs::msg::Twist & robot_speed) const
+{
+  return use_last_command_velocity_ ? last_command_velocity_ : robot_speed;
+}
+
+void MPPIController::resetLastCommandVelocity()
+{
+  last_command_velocity_ = geometry_msgs::msg::Twist();
 }
 
 void MPPIController::visualize(

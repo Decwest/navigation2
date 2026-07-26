@@ -103,6 +103,19 @@ public:
 
 protected:
   /**
+    * @brief Select velocity used to initialize MPPI rollouts
+    * @param robot_speed Current odometry velocity supplied by Controller Server
+    * @return Last raw controller command when enabled, otherwise robot_speed
+    */
+  const geometry_msgs::msg::Twist & getOptimizerSpeed(
+    const geometry_msgs::msg::Twist & robot_speed) const;
+
+  /**
+    * @brief Clear the stored command velocity at controller state boundaries
+    */
+  void resetLastCommandVelocity();
+
+  /**
     * @brief Visualize trajectories
     * @param transformed_plan Transformed input plan
     */
@@ -122,6 +135,8 @@ protected:
   TrajectoryVisualizer trajectory_visualizer_;
 
   bool visualize_;
+  bool use_last_command_velocity_{false};
+  geometry_msgs::msg::Twist last_command_velocity_;
 };
 
 }  // namespace nav2_mppi_controller
